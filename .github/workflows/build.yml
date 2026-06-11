@@ -53,34 +53,39 @@ jobs:
         EOF
 
     - name: Gerar app/build.gradle
-      run: |
-        cat > app/build.gradle << 'EOF'
-        apply plugin: 'com.android.application'
+  run: |
+    cat > app/build.gradle << 'EOF'
+    apply plugin: 'com.android.application'
+    
+    android {
+        namespace 'com.gameresolution'
+        compileSdk 34
         
-        android {
-            namespace 'com.gameresolution'
-            compileSdk 34
-            
-            defaultConfig {
-                applicationId "com.gameresolution"
-                minSdk 21
-                targetSdk 34
-                versionCode 1
-                versionName "1.0"
-            }
-            
-            buildTypes {
-                release {
-                    minifyEnabled false
-                }
-            }
-            
-            compileOptions {
-                sourceCompatibility JavaVersion.VERSION_1_8
-                targetCompatibility JavaVersion.VERSION_1_8
+        defaultConfig {
+            applicationId "com.gameresolution"
+            minSdk 21
+            targetSdk 34
+            versionCode 1
+            versionName "1.0"
+        }
+        
+        buildTypes {
+            release {
+                minifyEnabled false
             }
         }
-        EOF
+        
+        compileOptions {
+            sourceCompatibility JavaVersion.VERSION_1_8
+            targetCompatibility JavaVersion.VERSION_1_8
+        }
+    }
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+    EOF
 
     - name: Gerar gradle wrapper
       run: gradle wrapper --gradle-version 8.5
