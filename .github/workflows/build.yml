@@ -22,7 +22,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-34 build-tools;34.0.0'
+          packages: 'platforms;android-36 build-tools;36.0.0'
 
       - name: Gerar build.gradle raiz
         run: |
@@ -33,7 +33,7 @@ jobs:
                   mavenCentral()
               }
               dependencies {
-                  classpath 'com.android.tools.build:gradle:8.2.0'
+                  classpath 'com.android.tools.build:gradle:8.7.0'
               }
           }
           EOF
@@ -59,12 +59,12 @@ jobs:
           
           android {
               namespace 'com.gameresolution'
-              compileSdk 34
+              compileSdk 36
               
               defaultConfig {
                   applicationId "com.gameresolution"
                   minSdk 21
-                  targetSdk 34
+                  targetSdk 36
                   versionCode 1
                   versionName "1.0"
               }
@@ -76,8 +76,8 @@ jobs:
               }
               
               compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
               }
           }
           
@@ -101,7 +101,7 @@ jobs:
           EOF
 
       - name: Gerar gradle wrapper
-        run: gradle wrapper --gradle-version 8.5
+        run: gradle wrapper --gradle-version 8.7
 
       - name: Build APK Debug
         run: |
