@@ -20,8 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-public class MainActivity extends Activity {
-
+public class MainActivity extends androidx.appcompat.app.AppCompatActivity {
     RecyclerView rvPerfis;
     Button btnAdicionar;
     TextView tvPermissaoStatus;
