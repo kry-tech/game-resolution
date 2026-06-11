@@ -18,20 +18,13 @@ import android.os.IBinder;
 
 public class GameService extends Service {
 
+    String id;
     String pacote;
     int largura, altura, dpi;
     boolean ativo = false;
     boolean jogoRodando = false;
-    SharedPreferences prefs;
     BroadcastReceiver screenReceiver;
     BroadcastReceiver connectivityReceiver;
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        prefs = getSharedPreferences("game_res", MODE_PRIVATE);
-        registerSafetyReceivers();
-    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -45,6 +38,7 @@ public class GameService extends Service {
             : intent.getAction();
 
         if ("INICIAR".equals(acao)) {
+            id = intent.getStringExtra("id");
             pacote = intent.getStringExtra("pacote");
             largura = intent.getIntExtra("largura", 720);
             altura = intent.getIntExtra("altura", 1280);
@@ -61,48 +55,43 @@ public class GameService extends Service {
         restaurarResolucao();
         ativo = true;
         mostrarNotificacao();
-        prefs.edit().putBoolean("ativo", true).apply();
+        registerSafetyReceivers();
 
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while (ativo) {
-                    try {
-                        if (!temInternet()) {
+        new Thread(() -> {
+            while (ativo) {
+                try {
+                    if (!temInternet()) {
+                        restaurarResolucao();
+                        jogoRodando = false;
+                        Thread.sleep(5000);
+                        continue;
+                    }
+
+                    String appAtual = getAppFrente();
+
+                    if (appAtual == null || appAtual.isEmpty()) {
+                        if (jogoRodando) {
                             restaurarResolucao();
                             jogoRodando = false;
-                            Thread.sleep(5000);
-                            continue;
                         }
+                        Thread.sleep(1000);
+                        continue;
+                    }
 
-                        String appAtual = getAppFrente();
+                    boolean jogo = appAtual.contains(pacote);
 
-                        if (appAtual == null || appAtual.isEmpty()) {
-                            if (jogoRodando) {
-                                restaurarResolucao();
-                                jogoRodando = false;
-                            }
-                            Thread.sleep(1000);
-                            continue;
-                        }
-
-                        boolean jogo = appAtual.contains(pacote);
-
-                        if (jogo && !jogoRodando) {
-                            alterarResolucao();
-                            jogoRodando = true;
-                            prefs.edit().putBoolean("resolucao_alterada", true).apply();
-                        } else if (!jogo && jogoRodando) {
-                            restaurarResolucao();
-                            jogoRodando = false;
-                            prefs.edit().putBoolean("resolucao_alterada", false).apply();
-                        }
-
-                        Thread.sleep(1500);
-                    } catch (Exception e) {
+                    if (jogo && !jogoRodando) {
+                        alterarResolucao();
+                        jogoRodando = true;
+                    } else if (!jogo && jogoRodando) {
                         restaurarResolucao();
                         jogoRodando = false;
                     }
+
+                    Thread.sleep(1500);
+                } catch (Exception e) {
+                    restaurarResolucao();
+                    jogoRodando = false;
                 }
             }
         }).start();
@@ -121,7 +110,6 @@ public class GameService extends Service {
         try {
             exec("wm size reset");
             exec("wm density reset");
-            prefs.edit().putBoolean("resolucao_alterada", false).apply();
         } catch (Exception e) {}
     }
 
@@ -129,20 +117,16 @@ public class GameService extends Service {
         ativo = false;
         restaurarResolucao();
         jogoRodando = false;
-        prefs.edit()
-            .putBoolean("ativo", false)
-            .putBoolean("resolucao_alterada", false)
-            .apply();
+        try {
+            unregisterReceiver(screenReceiver);
+            unregisterReceiver(connectivityReceiver);
+        } catch (Exception e) {}
         stopForeground(true);
         stopSelf();
     }
 
     void restaurarESair() {
         restaurarResolucao();
-        prefs.edit()
-            .putBoolean("ativo", false)
-            .putBoolean("resolucao_alterada", false)
-            .apply();
         stopSelf();
     }
 
@@ -151,20 +135,15 @@ public class GameService extends Service {
             UsageStatsManager usm = (UsageStatsManager) getSystemService(USAGE_STATS_SERVICE);
             long agora = System.currentTimeMillis();
             java.util.List<UsageStats> stats = usm.queryUsageStats(
-                UsageStatsManager.INTERVAL_DAILY,
-                agora - 5000,
-                agora
+                UsageStatsManager.INTERVAL_DAILY, agora - 5000, agora
             );
-
             if (stats == null || stats.isEmpty()) return "";
-
             UsageStats recente = null;
             for (UsageStats s : stats) {
                 if (recente == null || s.getLastTimeUsed() > recente.getLastTimeUsed()) {
                     recente = s;
                 }
             }
-
             return recente != null ? recente.getPackageName() : "";
         } catch (Exception e) {
             return "";
@@ -225,32 +204,27 @@ public class GameService extends Service {
 
     void mostrarNotificacao() {
         String canalId = "game_res";
-
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel canal = new NotificationChannel(
-                canalId,
-                "Game Resolution",
-                NotificationManager.IMPORTANCE_LOW
+                canalId, "Game Resolution", NotificationManager.IMPORTANCE_LOW
             );
             NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (nm != null) {
-                nm.createNotificationChannel(canal);
-            }
+            if (nm != null) nm.createNotificationChannel(canal);
         }
 
         Notification notif;
         if (Build.VERSION.SDK_INT >= 26) {
             notif = new Notification.Builder(this, canalId)
                 .setContentTitle("Game Resolution")
-                .setContentText("Protegido: " + pacote)
-                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setContentText("Monitorando: " + pacote)
+                .setSmallIcon(android.R.drawable.ic_menu_manage)
                 .setOngoing(true)
                 .build();
         } else {
             notif = new Notification.Builder(this)
                 .setContentTitle("Game Resolution")
-                .setContentText("Protegido: " + pacote)
-                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setContentText("Monitorando: " + pacote)
+                .setSmallIcon(android.R.drawable.ic_menu_manage)
                 .setOngoing(true)
                 .build();
         }
@@ -261,10 +235,6 @@ public class GameService extends Service {
     @Override
     public void onDestroy() {
         pararTudo();
-        try {
-            if (screenReceiver != null) unregisterReceiver(screenReceiver);
-            if (connectivityReceiver != null) unregisterReceiver(connectivityReceiver);
-        } catch (Exception e) {}
         super.onDestroy();
     }
 
@@ -275,7 +245,5 @@ public class GameService extends Service {
     }
 
     @Override
-    public IBinder onBind(Intent intent) {
-        return null;
-    }
-                                                                }
+    public IBinder onBind(Intent intent) { return null; }
+}
