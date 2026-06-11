@@ -14,11 +14,8 @@ public class BootReceiver extends BroadcastReceiver {
                 Runtime.getRuntime().exec("wm density reset");
             } catch (Exception e) {}
 
-            SharedPreferences prefs = context.getSharedPreferences("game_res", Context.MODE_PRIVATE);
-            prefs.edit()
-                .putBoolean("ativo", false)
-                .putBoolean("resolucao_alterada", false)
-                .apply();
+            SharedPreferences prefs = context.getSharedPreferences("perfis", Context.MODE_PRIVATE);
+            prefs.edit().putString("lista", "[]").apply();
         }
     }
 }
