@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#1E1E1E"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Novo Perfil"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp" />
+
+    <EditText
+        android:id="@+id/et_nome"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:hint="Nome do jogo"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#888888"
+        android:background="#2A2A2A"
+        android:padding="12dp"
+        android:layout_marginBottom="8dp" />
+
+    <EditText
+        android:id="@+id/et_pacote"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:hint="Pacote (ex: com.game.app)"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#888888"
+        android:background="#2A2A2A"
+        android:padding="12dp"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <EditText
+            android:id="@+id/et_largura"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:hint="Largura"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#888888"
+            android:background="#2A2A2A"
+            android:padding="12dp"
+            android:inputType="number"
+            android:layout_marginEnd="4dp" />
+
+        <EditText
+            android:id="@+id/et_altura"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:hint="Altura"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#888888"
+            android:background="#2A2A2A"
+            android:padding="12dp"
+            android:inputType="number"
+            android:layout_marginStart="4dp" />
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/et_dpi"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:hint="DPI (ex: 280)"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#888888"
+        android:background="#2A2A2A"
+        android:padding="12dp"
+        android:inputType="number"
+        android:layout_marginBottom="16dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_cancelar"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="Cancelar"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#666666"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_salvar"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="Salvar"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#2196F3"
+            android:layout_marginStart="4dp" />
+    </LinearLayout>
+</LinearLayout>
