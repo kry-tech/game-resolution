@@ -20,7 +20,6 @@ import java.net.Socket
 import java.util.UUID
 import kotlin.concurrent.thread
 
-// ==================== DATA CLASS ====================
 data class Perfil(
     val id: String,
     val nome: String,
@@ -31,7 +30,6 @@ data class Perfil(
     var ativo: Boolean = false
 )
 
-// ==================== MAIN ACTIVITY ====================
 class MainActivity : AppCompatActivity() {
 
     private val perfis = mutableListOf<Perfil>()
@@ -61,7 +59,6 @@ class MainActivity : AppCompatActivity() {
         atualizarUI()
     }
 
-    // ==================== PERFIS ====================
     private fun carregarPerfis() {
         perfis.clear()
         try {
@@ -180,132 +177,134 @@ class MainActivity : AppCompatActivity() {
         salvarPerfis(); atualizarUI()
     }
 
-    // ==================== CONEXÃO VIA IP ====================
+    // ==================== CONEXÃO POR CÓDIGO DE PAREAMENTO ====================
     private fun mostrarDialogConexao() {
-        val tvInstrucoes = TextView(this).apply {
-            text = """
-                📌 Passo a passo:
-                
-                1. Ative as Opções do Desenvolvedor
-                2. Ative a Depuração USB
-                3. Ative a Depuração Sem Fio (Wi-Fi)
-                4. Anote o IP e porta que aparecer
-                5. Digite abaixo:
-            """.trimIndent()
+        val etCodigo = EditText(this).apply {
+            hint = "Código de 6 dígitos"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            maxLines = 1
+            textSize = 22f
+            gravity = android.view.Gravity.CENTER
+        }
+        val tvResultado = TextView(this).apply {
+            setTextColor(0xFFFFFF00.toInt())
             textSize = 13f
-            setTextColor(0xFFCCCCCC.toInt())
+            gravity = android.view.Gravity.CENTER
         }
-
-        val etIP = EditText(this).apply {
-            hint = "IP:Porta (ex: 192.168.1.10:5555)"
-            setText(prefs.getString("ip", "192.168.1."))
-        }
-        val tvResultado = TextView(this).apply { setTextColor(0xFFFFFF00.toInt()); textSize = 13f }
 
         val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(32, 16, 32, 16)
-            addView(tvInstrucoes); addView(etIP); addView(tvResultado)
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 16, 32, 16)
+            addView(TextView(this@MainActivity).apply {
+                text = """
+                    📌 Como parear:
+                    
+                    1. Vá em Opções do Desenvolvedor
+                    2. Ative Depuração Sem Fio
+                    3. Toque em "Parear dispositivo com código"
+                    4. Digite o código de 6 dígitos abaixo
+                    5. Toque em Conectar
+                """.trimIndent()
+                textSize = 13f
+                setTextColor(0xFFCCCCCC.toInt())
+            })
+            addView(etCodigo)
+            addView(tvResultado)
         }
 
-        AlertDialog.Builder(this).setTitle("🔌 Conectar Depuração Wi-Fi").setView(layout)
+        AlertDialog.Builder(this)
+            .setTitle("🔌 Parear Dispositivo")
+            .setView(layout)
             .setPositiveButton("Conectar") { _, _ ->
-                val ipPorta = etIP.text.toString().trim()
-                if (!ipPorta.contains(":")) {
-                    Toast.makeText(this, "Formato inválido! Use IP:Porta", Toast.LENGTH_SHORT).show()
+                val codigo = etCodigo.text.toString().trim()
+                if (codigo.length != 6 || !codigo.all { it.isDigit() }) {
+                    Toast.makeText(this, "Digite um código válido de 6 dígitos!", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
 
-                tvResultado.text = "Conectando..."
+                tvResultado.text = "Pareando..."
                 thread {
-                    val r = conectarViaTCP(ipPorta)
+                    val resultado = parearComCodigo(codigo)
                     runOnUiThread {
-                        tvResultado.text = r
-                        if (r.contains("✅")) {
-                            prefs.edit().putString("ip", ipPorta).apply()
+                        tvResultado.text = resultado
+                        if (resultado.contains("✅")) {
                             atualizarStatus()
-                            Toast.makeText(this, "Conectado!", Toast.LENGTH_SHORT).show()
-                            // Fecha o dialog após 1.5s
                             Handler(Looper.getMainLooper()).postDelayed({
                                 try {
                                     (layout.parent.parent as? AlertDialog)?.dismiss()
                                 } catch (_: Exception) {}
-                            }, 1500)
+                            }, 2000)
                         }
                     }
                 }
             }
-            .setNegativeButton("Fechar", null).show()
+            .setNegativeButton("Cancelar", null)
+            .show()
     }
 
-    private fun conectarViaTCP(ipPorta: String): String {
+    private fun parearComCodigo(codigo: String): String {
         return try {
-            val partes = ipPorta.split(":")
-            val ip = partes[0]
-            val porta = partes.getOrNull(1)?.toIntOrNull() ?: 5555
+            // Método 1: Tenta via shell cmd (Android 11+)
+            val resultado1 = executarShell("cmd adb pair $codigo")
+            if (resultado1.contains("Successfully") || resultado1.contains("paired")) {
+                executarShell("cmd adb connect localhost:5555")
+                return "✅ Pareado com sucesso!"
+            }
 
-            val socket = Socket(ip, porta)
-            socket.soTimeout = 5000
+            // Método 2: Tenta via service call (Android 10+)
+            val resultado2 = executarShell("service call adb 2 i32 1 s16 $codigo")
+            if (resultado2.contains("Result: Parcel(00000000")) {
+                executarShell("cmd adb connect localhost:5555")
+                return "✅ Pareado com sucesso!"
+            }
 
-            val writer = PrintWriter(socket.getOutputStream(), true)
-            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            // Método 3: Tenta abrir a tela de pareamento do sistema
+            runOnUiThread {
+                try {
+                    val intent = Intent("com.android.settings.ADB_WIRELESS_SETTINGS")
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    try {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        startActivity(intent)
+                    } catch (e2: Exception) {}
+                }
+            }
 
-            // Testa conexão executando um comando simples
-            writer.println("wm size")
-            val resposta = reader.readLine()
-
-            socket.close()
-
-            if (resposta != null && resposta.contains("Physical size")) {
-                // Salva o IP para comandos futuros
-                prefs.edit().putString("ip_conectado", ipPorta).apply()
-                "✅ Conectado! Resolução atual: $resposta"
+            if (resultado1.isNotEmpty() || resultado2.isNotEmpty()) {
+                "⚠️ Resultado: ${resultado1.ifEmpty { resultado2 }}"
             } else {
-                "❌ Não foi possível executar comandos. Verifique se a depuração está ativa."
+                "⚠️ Tente parear manualmente nas Opções do Desenvolvedor"
             }
         } catch (e: Exception) {
-            "❌ Erro: ${e.message?.take(50) ?: "Falha na conexão"}"
+            "❌ Erro: ${e.message?.take(60)}"
         }
     }
 
-    private fun executarComandoRemoto(cmd: String): String {
+    private fun executarShell(cmd: String): String {
         return try {
-            val ipPorta = prefs.getString("ip_conectado", "") ?: return "Sem conexão"
-            val partes = ipPorta.split(":")
-            val ip = partes[0]
-            val porta = partes.getOrNull(1)?.toIntOrNull() ?: 5555
-
-            val socket = Socket(ip, porta)
-            socket.soTimeout = 5000
-
-            val writer = PrintWriter(socket.getOutputStream(), true)
-            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-
-            writer.println(cmd)
-            val resposta = reader.readLine()
-            socket.close()
-            resposta ?: "OK"
+            val p = Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd))
+            val out = p.inputStream.bufferedReader().readText().trim()
+            val err = p.errorStream.bufferedReader().readText().trim()
+            p.waitFor()
+            out.ifEmpty { err }
         } catch (e: Exception) {
-            "Erro: ${e.message}"
+            ""
         }
     }
 
     private fun restaurarResolucao() {
         try {
-            // Tenta local primeiro
             Runtime.getRuntime().exec("wm size reset")
             Runtime.getRuntime().exec("wm density reset")
-        } catch (_: Exception) {
-            // Se falhar, tenta remoto
-            thread {
-                executarComandoRemoto("wm size reset")
-                executarComandoRemoto("wm density reset")
-            }
-        }
+        } catch (_: Exception) {}
         atualizarStatus()
     }
 
     private fun atualizarStatus() {
-        val ok = temPermissaoShell() || prefs.getString("ip_conectado", "").isNotEmpty()
+        val ok = temPermissaoShell()
         tvStatus.text = if (ok && temPermissaoUsage()) "🟢 Pronto" else "🔴 Sem permissão"
     }
 
@@ -325,14 +324,11 @@ class MainActivity : AppCompatActivity() {
 class GameService : Service() {
 
     private var pacote = ""
-    private var largura = 720; private var altura = 1280; private var dpi = 280
-    private var ativo = false; private var jogoAtivo = false
-    private lateinit var prefs: SharedPreferences
-
-    override fun onCreate() {
-        super.onCreate()
-        prefs = getSharedPreferences("perfis", MODE_PRIVATE)
-    }
+    private var largura = 720
+    private var altura = 1280
+    private var dpi = 280
+    private var ativo = false
+    private var jogoAtivo = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) { restaurar(); stopSelf(); return START_NOT_STICKY }
@@ -350,7 +346,8 @@ class GameService : Service() {
     }
 
     private fun iniciar() {
-        ativo = true; mostrarNotificacao()
+        ativo = true
+        mostrarNotificacao()
         Thread {
             while (ativo) {
                 try {
@@ -381,23 +378,7 @@ class GameService : Service() {
     }
 
     private fun exec(cmd: String) {
-        try {
-            Runtime.getRuntime().exec(cmd).waitFor()
-        } catch (_: Exception) {
-            // Tenta via TCP se local falhar
-            executarRemoto(cmd)
-        }
-    }
-
-    private fun executarRemoto(cmd: String) {
-        try {
-            val ipPorta = prefs.getString("ip_conectado", "") ?: return
-            val partes = ipPorta.split(":")
-            val socket = Socket(partes[0], partes.getOrNull(1)?.toIntOrNull() ?: 5555)
-            socket.soTimeout = 3000
-            PrintWriter(socket.getOutputStream(), true).println(cmd)
-            socket.close()
-        } catch (_: Exception) {}
+        try { Runtime.getRuntime().exec(cmd).waitFor() } catch (_: Exception) {}
     }
 
     private fun restaurar() {
@@ -412,8 +393,11 @@ class GameService : Service() {
                 NotificationChannel(canal, "Game", NotificationManager.IMPORTANCE_LOW))
         }
         startForeground(1, Notification.Builder(this, canal)
-            .setContentTitle("Game Resolution").setContentText("Monitorando: $pacote")
-            .setSmallIcon(android.R.drawable.ic_menu_manage).setOngoing(true).build())
+            .setContentTitle("Game Resolution")
+            .setContentText("Monitorando: $pacote")
+            .setSmallIcon(android.R.drawable.ic_menu_manage)
+            .setOngoing(true)
+            .build())
     }
 
     override fun onBind(i: Intent?) = null
