@@ -13,7 +13,12 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.PrintWriter
+import java.net.Socket
 import java.util.UUID
+import kotlin.concurrent.thread
 
 // ==================== DATA CLASS ====================
 data class Perfil(
@@ -123,7 +128,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun mostrarDialogPerfil() {
-        val v = layoutInflater.inflate(android.R.layout.select_dialog_item, null)
         val etNome = EditText(this).apply { hint = "Nome do jogo" }
         val etPct = EditText(this).apply { hint = "Pacote (ex: com.game.app)" }
         val etW = EditText(this).apply { hint = "Largura (720)"; inputType = 2 }
@@ -176,50 +180,133 @@ class MainActivity : AppCompatActivity() {
         salvarPerfis(); atualizarUI()
     }
 
-    // ==================== CONEXÃO ADB WiFi ====================
+    // ==================== CONEXÃO VIA IP ====================
     private fun mostrarDialogConexao() {
-        val etCodigo = EditText(this).apply { hint = "Código de 6 dígitos"; inputType = 2; maxLines = 1 }
-        val etPorta = EditText(this).apply { hint = "Porta"; setText("5555"); inputType = 2 }
-        val tvRes = TextView(this).apply { setTextColor(0xFFFFFF00.toInt()); textSize = 12f }
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(32, 16, 32, 16)
-            addView(TextView(this@MainActivity).apply { text = "1. Ative a Depuração Wi-Fi\n2. Toque em 'Parear dispositivo'\n3. Digite o código abaixo:"; textSize = 12f })
-            addView(etPorta); addView(etCodigo); addView(tvRes)
+        val tvInstrucoes = TextView(this).apply {
+            text = """
+                📌 Passo a passo:
+                
+                1. Ative as Opções do Desenvolvedor
+                2. Ative a Depuração USB
+                3. Ative a Depuração Sem Fio (Wi-Fi)
+                4. Anote o IP e porta que aparecer
+                5. Digite abaixo:
+            """.trimIndent()
+            textSize = 13f
+            setTextColor(0xFFCCCCCC.toInt())
         }
 
-        AlertDialog.Builder(this).setTitle("🔌 Conectar Wi-Fi").setView(layout)
+        val etIP = EditText(this).apply {
+            hint = "IP:Porta (ex: 192.168.1.10:5555)"
+            setText(prefs.getString("ip", "192.168.1."))
+        }
+        val tvResultado = TextView(this).apply { setTextColor(0xFFFFFF00.toInt()); textSize = 13f }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(32, 16, 32, 16)
+            addView(tvInstrucoes); addView(etIP); addView(tvResultado)
+        }
+
+        AlertDialog.Builder(this).setTitle("🔌 Conectar Depuração Wi-Fi").setView(layout)
             .setPositiveButton("Conectar") { _, _ ->
-                val codigo = etCodigo.text.toString().trim()
-                if (codigo.length != 6) { Toast.makeText(this, "Código inválido!", Toast.LENGTH_SHORT).show(); return@setPositiveButton }
-                Thread {
-                    val r = conectarADB(codigo, etPorta.text.toString().toIntOrNull() ?: 5555)
-                    runOnUiThread { tvRes.text = r; atualizarStatus() }
-                }.start()
+                val ipPorta = etIP.text.toString().trim()
+                if (!ipPorta.contains(":")) {
+                    Toast.makeText(this, "Formato inválido! Use IP:Porta", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+                tvResultado.text = "Conectando..."
+                thread {
+                    val r = conectarViaTCP(ipPorta)
+                    runOnUiThread {
+                        tvResultado.text = r
+                        if (r.contains("✅")) {
+                            prefs.edit().putString("ip", ipPorta).apply()
+                            atualizarStatus()
+                            Toast.makeText(this, "Conectado!", Toast.LENGTH_SHORT).show()
+                            // Fecha o dialog após 1.5s
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                try {
+                                    (layout.parent.parent as? AlertDialog)?.dismiss()
+                                } catch (_: Exception) {}
+                            }, 1500)
+                        }
+                    }
+                }
             }
             .setNegativeButton("Fechar", null).show()
     }
 
-    private fun conectarADB(codigo: String, porta: Int): String {
+    private fun conectarViaTCP(ipPorta: String): String {
         return try {
-            exec("adb kill-server")
-            exec("adb start-server")
-            val r = exec("adb pair localhost:$porta $codigo")
-            if (r.contains("Success") || r.contains("connected")) "✅ Conectado!" else "❌ $r"
-        } catch (e: Exception) { "❌ ${e.message}" }
+            val partes = ipPorta.split(":")
+            val ip = partes[0]
+            val porta = partes.getOrNull(1)?.toIntOrNull() ?: 5555
+
+            val socket = Socket(ip, porta)
+            socket.soTimeout = 5000
+
+            val writer = PrintWriter(socket.getOutputStream(), true)
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+
+            // Testa conexão executando um comando simples
+            writer.println("wm size")
+            val resposta = reader.readLine()
+
+            socket.close()
+
+            if (resposta != null && resposta.contains("Physical size")) {
+                // Salva o IP para comandos futuros
+                prefs.edit().putString("ip_conectado", ipPorta).apply()
+                "✅ Conectado! Resolução atual: $resposta"
+            } else {
+                "❌ Não foi possível executar comandos. Verifique se a depuração está ativa."
+            }
+        } catch (e: Exception) {
+            "❌ Erro: ${e.message?.take(50) ?: "Falha na conexão"}"
+        }
     }
 
-    private fun exec(cmd: String) = try {
-        val p = Runtime.getRuntime().exec(cmd)
-        p.inputStream.bufferedReader().readText().trim()
-    } catch (e: Exception) { "" }
+    private fun executarComandoRemoto(cmd: String): String {
+        return try {
+            val ipPorta = prefs.getString("ip_conectado", "") ?: return "Sem conexão"
+            val partes = ipPorta.split(":")
+            val ip = partes[0]
+            val porta = partes.getOrNull(1)?.toIntOrNull() ?: 5555
+
+            val socket = Socket(ip, porta)
+            socket.soTimeout = 5000
+
+            val writer = PrintWriter(socket.getOutputStream(), true)
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+
+            writer.println(cmd)
+            val resposta = reader.readLine()
+            socket.close()
+            resposta ?: "OK"
+        } catch (e: Exception) {
+            "Erro: ${e.message}"
+        }
+    }
 
     private fun restaurarResolucao() {
-        try { Runtime.getRuntime().exec("wm size reset"); Runtime.getRuntime().exec("wm density reset") } catch (_: Exception) {}
+        try {
+            // Tenta local primeiro
+            Runtime.getRuntime().exec("wm size reset")
+            Runtime.getRuntime().exec("wm density reset")
+        } catch (_: Exception) {
+            // Se falhar, tenta remoto
+            thread {
+                executarComandoRemoto("wm size reset")
+                executarComandoRemoto("wm density reset")
+            }
+        }
         atualizarStatus()
     }
 
     private fun atualizarStatus() {
-        tvStatus.text = if (temPermissaoShell() && temPermissaoUsage()) "🟢 Pronto" else "🔴 Sem permissão"
+        val ok = temPermissaoShell() || prefs.getString("ip_conectado", "").isNotEmpty()
+        tvStatus.text = if (ok && temPermissaoUsage()) "🟢 Pronto" else "🔴 Sem permissão"
     }
 
     private fun temPermissaoShell() = try {
@@ -240,6 +327,12 @@ class GameService : Service() {
     private var pacote = ""
     private var largura = 720; private var altura = 1280; private var dpi = 280
     private var ativo = false; private var jogoAtivo = false
+    private lateinit var prefs: SharedPreferences
+
+    override fun onCreate() {
+        super.onCreate()
+        prefs = getSharedPreferences("perfis", MODE_PRIVATE)
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) { restaurar(); stopSelf(); return START_NOT_STICKY }
@@ -262,9 +355,18 @@ class GameService : Service() {
             while (ativo) {
                 try {
                     val app = appFrente()
-                    if (app == pacote && !jogoAtivo) { exec("wm size ${largura}x${altura}"); exec("wm density $dpi"); jogoAtivo = true }
-                    else if (app != pacote && jogoAtivo) { restaurar(); jogoAtivo = false }
-                } catch (_: Exception) { restaurar(); jogoAtivo = false }
+                    if (app == pacote && !jogoAtivo) {
+                        exec("wm size ${largura}x${altura}")
+                        exec("wm density $dpi")
+                        jogoAtivo = true
+                    } else if (app != pacote && jogoAtivo) {
+                        restaurar()
+                        jogoAtivo = false
+                    }
+                } catch (_: Exception) {
+                    restaurar()
+                    jogoAtivo = false
+                }
                 Thread.sleep(1500)
             }
         }.start()
@@ -278,8 +380,30 @@ class GameService : Service() {
         } catch (_: Exception) { null }
     }
 
-    private fun exec(cmd: String) { try { Runtime.getRuntime().exec(cmd).waitFor() } catch (_: Exception) {} }
-    private fun restaurar() { exec("wm size reset"); exec("wm density reset") }
+    private fun exec(cmd: String) {
+        try {
+            Runtime.getRuntime().exec(cmd).waitFor()
+        } catch (_: Exception) {
+            // Tenta via TCP se local falhar
+            executarRemoto(cmd)
+        }
+    }
+
+    private fun executarRemoto(cmd: String) {
+        try {
+            val ipPorta = prefs.getString("ip_conectado", "") ?: return
+            val partes = ipPorta.split(":")
+            val socket = Socket(partes[0], partes.getOrNull(1)?.toIntOrNull() ?: 5555)
+            socket.soTimeout = 3000
+            PrintWriter(socket.getOutputStream(), true).println(cmd)
+            socket.close()
+        } catch (_: Exception) {}
+    }
+
+    private fun restaurar() {
+        exec("wm size reset")
+        exec("wm density reset")
+    }
 
     private fun mostrarNotificacao() {
         val canal = "game"
