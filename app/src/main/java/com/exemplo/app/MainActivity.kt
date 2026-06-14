@@ -1,40 +1,55 @@
 package com.exemplo.app
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.view.ViewGroup
-import android.widget.TextView
+import android.provider.Settings
+import android.view.Gravity
+import android.widget.Button
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        enableEdgeToEdge()
+        val root = FrameLayout(this)
 
-        val textView = TextView(this).apply {
-            text = "Olá, Android em Kotlin!"
-            textSize = 20f
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
+        val botao = Button(this).apply {
+            text = "Abrir Menu"
+            setOnClickListener {
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                    !Settings.canDrawOverlays(this@MainActivity)
+                ) {
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivity(intent)
+                    return@setOnClickListener
+                }
+
+                startService(
+                    Intent(
+                        this@MainActivity,
+                        FloatingService::class.java
+                    )
+                )
+            }
         }
 
-        ViewCompat.setOnApplyWindowInsetsListener(textView) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(
-                bars.left,
-                bars.top,
-                bars.right,
-                bars.bottom
-            )
-            insets
-        }
+        val params = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        )
 
-        setContentView(textView)
+        params.gravity = Gravity.CENTER
+
+        root.addView(botao, params)
+
+        setContentView(root)
     }
 }
