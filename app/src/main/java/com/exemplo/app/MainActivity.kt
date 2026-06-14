@@ -1,9 +1,12 @@
 package com.exemplo.app
 
 import android.app.AlertDialog
+import android.content.Intent
+import android.content.SharedPreferences
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -16,40 +19,30 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 
 class MainActivity : ComponentActivity() {
 
-    private var isMacroEnabled = false
     private lateinit var mainFab: FloatingActionButton
-    private lateinit var triggerFab: FloatingActionButton
-    private lateinit var confirmFab: FloatingActionButton
-    private val actionFabs = mutableListOf<FloatingActionButton>()
-    private var rootLayout: FrameLayout? = null
+    private var isMacroEnabled = false
 
-    // Configurações padrão
+    // Configurações
     private var actionCount = 5
     private var actionSize = FloatingActionButton.SIZE_MINI
     private var actionDelayMs = 500L
-    private var actionOrder: MutableList<Int> = mutableListOf() // índices dos ícones
+    private var actionOrder: MutableList<Int> = mutableListOf()
 
-    // Ícones disponíveis (máximo 10)
-    private val availableIcons = intArrayOf(
-        android.R.drawable.ic_menu_camera,
-        android.R.drawable.ic_menu_gallery,
-        android.R.drawable.ic_menu_manage,
-        android.R.drawable.ic_menu_send,
-        android.R.drawable.ic_menu_share,
-        android.R.drawable.ic_menu_call,
-        android.R.drawable.ic_menu_directions,
-        android.R.drawable.ic_menu_edit,
-        android.R.drawable.ic_menu_info_details,
-        android.R.drawable.ic_menu_zoom
-    )
+    companion object {
+        const val PREFS_NAME = "macro_prefs"
+        const val KEY_ENABLED = "macro_enabled"
+        const val KEY_COUNT = "action_count"
+        const val KEY_SIZE = "action_size"
+        const val KEY_DELAY = "action_delay"
+        const val KEY_ORDER = "action_order"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        rootLayout = FrameLayout(this)
+        val rootLayout = FrameLayout(this)
 
-        // Texto de fundo original
         val textView = TextView(this).apply {
             text = "Olá, Android em Kotlin!"
             textSize = 20f
@@ -58,22 +51,19 @@ class MainActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
-        rootLayout?.addView(textView)
+        rootLayout.addView(textView)
 
-        // Edge-to-edge
-        ViewCompat.setOnApplyWindowInsetsListener(rootLayout!!) { view, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
         setContentView(rootLayout)
 
-        // Carregar configurações salvas
         loadPreferences()
 
         val density = resources.displayMetrics.density
 
-        // FAB principal (menu flutuante)
         mainFab = FloatingActionButton(this).apply {
             id = View.generateViewId()
             layoutParams = FrameLayout.LayoutParams(
@@ -86,72 +76,15 @@ class MainActivity : ComponentActivity() {
             setImageResource(android.R.drawable.ic_menu_add)
             setOnClickListener { showMainMenu() }
         }
-        rootLayout?.addView(mainFab)
-
-        // Botão de disparo e confirmar serão criados dinamicamente
-        triggerFab = createTriggerFab(density)
-        triggerFab.visibility = View.GONE
-        rootLayout?.addView(triggerFab)
-
-        confirmFab = createConfirmFab(density)
-        confirmFab.visibility = View.GONE
-        rootLayout?.addView(confirmFab)
-
-        // Se a macro estiver ativa na inicialização, recriar os botões
-        if (isMacroEnabled) {
-            enableMacro()
-        }
-    }
-
-    private fun createTriggerFab(density: Float): FloatingActionButton {
-        return FloatingActionButton(this).apply {
-            id = View.generateViewId()
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM or Gravity.END
-            ).apply {
-                setMargins(0, 0, (16 * density).toInt(), (80 * density).toInt())
-            }
-            setImageResource(android.R.drawable.ic_menu_compass)
-            setOnClickListener {
-                if (actionFabs.isNotEmpty() && actionFabs.all { it.visibility == View.GONE }) {
-                    executeActionsWithDelay(0)
-                }
-            }
-        }
-    }
-
-    private fun createConfirmFab(density: Float): FloatingActionButton {
-        return FloatingActionButton(this).apply {
-            id = View.generateViewId()
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM or Gravity.END
-            ).apply {
-                setMargins(0, 0, (16 * density).toInt(), (140 * density).toInt())
-            }
-            setImageResource(android.R.drawable.ic_menu_set_as)
-            setOnClickListener {
-                // Esconde todos os botões de ação
-                for (fab in actionFabs) {
-                    fab.visibility = View.GONE
-                }
-                confirmFab.visibility = View.GONE
-                // triggerFab permanece visível
-            }
-        }
+        rootLayout.addView(mainFab)
     }
 
     private fun showMainMenu() {
-        val popup = PopupMenu(this@MainActivity, mainFab)
-        // Opção MACRO
+        val popup = PopupMenu(this, mainFab)
         popup.menu.add("MACRO").apply {
             isCheckable = true
             isChecked = isMacroEnabled
         }
-        // Opção EDITAR
         popup.menu.add("EDITAR")
         popup.setOnMenuItemClickListener { item ->
             when (item.title) {
@@ -159,9 +92,9 @@ class MainActivity : ComponentActivity() {
                     item.isChecked = !item.isChecked
                     isMacroEnabled = item.isChecked
                     if (isMacroEnabled) {
-                        enableMacro()
+                        startFloatingService()
                     } else {
-                        disableMacro()
+                        stopFloatingService()
                     }
                     savePreferences()
                     true
@@ -176,221 +109,135 @@ class MainActivity : ComponentActivity() {
         popup.show()
     }
 
-    private fun enableMacro() {
-        // Remove botões antigos, se existirem
-        clearActionFabs()
-
-        // Cria novos botões de ação conforme configurações
-        val density = resources.displayMetrics.density
-        val spacing = (48 * density).toInt() // espaçamento entre botões
-
-        // Ordem definida pelo usuário (índices dos ícones)
-        val orderedIcons = actionOrder.map { availableIcons[it] }
-
-        for (i in 0 until actionCount) {
-            val iconRes = if (i < orderedIcons.size) orderedIcons[i] else android.R.drawable.ic_menu_camera
-            val fab = FloatingActionButton(this).apply {
-                layoutParams = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    Gravity.BOTTOM or Gravity.END
-                )
-                size = actionSize
-                setImageResource(iconRes)
-                visibility = View.VISIBLE
-                // Posicionamento será ajustado abaixo
-            }
-            actionFabs.add(fab)
-            rootLayout?.addView(fab)
-        }
-
-        // Aguarda o layout ser medido para posicionar
-        confirmFab.post {
-            val confirmX = confirmFab.x
-            val confirmY = confirmFab.y
-            val confirmWidth = confirmFab.width
-            val confirmHeight = confirmFab.height
-
-            // Dispor os botões em um arco ao redor do confirmFab
-            val radius = (80 * density).toInt() + confirmWidth / 2
-            val angleStep = Math.PI / (actionCount + 1) // distribuir no semicírculo superior
-
-            for (i in actionFabs.indices) {
-                val angle = Math.PI - angleStep * (i + 1) // de 0 a PI
-                val dx = (radius * Math.cos(angle)).toInt()
-                val dy = -(radius * Math.sin(angle)).toInt() // negativo para cima
-
-                actionFabs[i].x = confirmX + confirmWidth / 2f - actionFabs[i].width / 2f + dx
-                actionFabs[i].y = confirmY - actionFabs[i].height + dy
+    private fun startFloatingService() {
+        // Verifica se a permissão de sobreposição foi concedida
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                Toast.makeText(this, "Permita sobreposição nas configurações", Toast.LENGTH_LONG).show()
+                val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName"))
+                startActivity(intent)
+                // Não inicia o serviço agora, o usuário precisa permitir
+                // Após conceder, ele pode ativar novamente
+                isMacroEnabled = false // volta ao estado anterior
+                return
             }
         }
 
-        triggerFab.visibility = View.VISIBLE
-        confirmFab.visibility = View.VISIBLE
+        val serviceIntent = Intent(this, FloatingMacroService::class.java)
+        serviceIntent.putExtra("actionCount", actionCount)
+        serviceIntent.putExtra("actionSize", actionSize)
+        serviceIntent.putExtra("actionDelay", actionDelayMs)
+        serviceIntent.putExtra("actionOrder", actionOrder.toIntArray())
+        startService(serviceIntent)
     }
 
-    private fun disableMacro() {
-        triggerFab.visibility = View.GONE
-        confirmFab.visibility = View.GONE
-        clearActionFabs()
-    }
-
-    private fun clearActionFabs() {
-        for (fab in actionFabs) {
-            rootLayout?.removeView(fab)
-        }
-        actionFabs.clear()
-    }
-
-    private fun executeActionsWithDelay(index: Int) {
-        if (index >= actionFabs.size) return
-
-        // Simula execução da ação (Toast)
-        Toast.makeText(this, "Executando ação ${index + 1}", Toast.LENGTH_SHORT).show()
-
-        if (index < actionFabs.size - 1) {
-            Handler(Looper.getMainLooper()).postDelayed({
-                executeActionsWithDelay(index + 1)
-            }, actionDelayMs)
-        }
+    private fun stopFloatingService() {
+        stopService(Intent(this, FloatingMacroService::class.java))
     }
 
     private fun showEditDialog() {
         val builder = AlertDialog.Builder(this)
         builder.setTitle("Editar Macro")
 
-        // Layout personalizado
-        val inflater = layoutInflater
-        val view = inflater.inflate(android.R.layout.select_dialog_item, null) // não é o ideal, vamos criar manualmente
-
-        // Vamos construir um layout simples programaticamente
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 20, 40, 20)
+            setPadding(60, 30, 60, 30)
         }
 
-        // Campo: quantidade de botões
-        val countLabel = TextView(this).apply { text = "Número de botões de ação:" }
-        layout.addView(countLabel)
+        // Quantidade
+        layout.addView(TextView(this).apply { text = "Número de botões (1-10):" })
         val countEdit = EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setText(actionCount.toString())
         }
         layout.addView(countEdit)
 
-        // Campo: tamanho (spinner)
-        val sizeLabel = TextView(this).apply { text = "Tamanho dos botões:" }
-        layout.addView(sizeLabel)
+        // Tamanho
+        layout.addView(TextView(this).apply { text = "Tamanho:" })
         val sizeSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter<String>(
-                this@MainActivity,
+            adapter = ArrayAdapter<String>(this@MainActivity,
                 android.R.layout.simple_spinner_item,
                 listOf("Mini", "Normal", "Grande")
             ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-            setSelection(
-                when (actionSize) {
-                    FloatingActionButton.SIZE_MINI -> 0
-                    FloatingActionButton.SIZE_NORMAL -> 1
-                    FloatingActionButton.SIZE_AUTO -> 2 // assumindo que "Grande" é SIZE_AUTO (não existe SIZE_LARGE)
-                    else -> 1
-                }
-            )
+            setSelection(when (actionSize) {
+                FloatingActionButton.SIZE_MINI -> 0
+                FloatingActionButton.SIZE_NORMAL -> 1
+                else -> 2
+            })
         }
         layout.addView(sizeSpinner)
 
-        // Campo: atraso (ms)
-        val delayLabel = TextView(this).apply { text = "Atraso entre ações (ms):" }
-        layout.addView(delayLabel)
+        // Atraso
+        layout.addView(TextView(this).apply { text = "Atraso entre ações (ms):" })
         val delayEdit = EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setText(actionDelayMs.toString())
         }
         layout.addView(delayEdit)
 
-        // Campo: ordem (será simplificado: reordenar usando uma lista com botões de subir/descer)
-        val orderLabel = TextView(this).apply { text = "Ordem dos ícones (toque para editar):" }
-        layout.addView(orderLabel)
-
-        // ListView simples com os nomes dos ícones
-        val iconNames = listOf("Câmera", "Galeria", "Gerenciar", "Enviar", "Compartilhar", "Chamada", "Direções", "Editar", "Info", "Zoom")
-        val orderAdapter = ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, iconNames.subList(0, actionCount))
-        val orderList = ListView(this).apply {
-            adapter = orderAdapter
-            // Permitir reordenar? Vamos usar um diálogo à parte, mas manteremos fixo por simplicidade.
-        }
-        layout.addView(orderList)
-
         builder.setView(layout)
 
         builder.setPositiveButton("Salvar") { dialog, _ ->
             val newCount = countEdit.text.toString().toIntOrNull() ?: actionCount
-            if (newCount < 1 || newCount > 10) {
-                Toast.makeText(this, "Quantidade entre 1 e 10", Toast.LENGTH_SHORT).show()
+            if (newCount !in 1..10) {
+                Toast.makeText(this, "Valor inválido (1-10)", Toast.LENGTH_SHORT).show()
                 return@setPositiveButton
             }
-            val newSize = when (sizeSpinner.selectedItemPosition) {
+            actionCount = newCount
+            actionSize = when (sizeSpinner.selectedItemPosition) {
                 0 -> FloatingActionButton.SIZE_MINI
                 1 -> FloatingActionButton.SIZE_NORMAL
                 2 -> FloatingActionButton.SIZE_AUTO
                 else -> FloatingActionButton.SIZE_MINI
             }
-            val newDelay = delayEdit.text.toString().toLongOrNull() ?: actionDelayMs
+            actionDelayMs = delayEdit.text.toString().toLongOrNull() ?: 500L
 
-            // Salvar nova ordem: mantemos a ordem atual dos índices (0..actionCount-1)
-            // Se a quantidade mudar, ajustamos a ordem
-            val newOrder = if (newCount != actionCount) {
-                (0 until newCount).toMutableList()
-            } else {
-                actionOrder.toMutableList()
+            // Ajustar a ordem caso a quantidade tenha mudado
+            while (actionOrder.size < actionCount) {
+                actionOrder.add(actionOrder.size)
             }
-
-            actionCount = newCount
-            actionSize = newSize
-            actionDelayMs = newDelay
-            actionOrder = newOrder
+            if (actionOrder.size > actionCount) {
+                actionOrder = actionOrder.subList(0, actionCount).toMutableList()
+            }
 
             savePreferences()
 
-            // Se a macro está ativa, recriar os botões
+            // Se o serviço está ativo, recria com as novas configs
             if (isMacroEnabled) {
-                disableMacro()
-                enableMacro()
+                stopFloatingService()
+                startFloatingService()
             }
-
             dialog.dismiss()
         }
 
-        builder.setNegativeButton("Cancelar") { dialog, _ -> dialog.cancel() }
-
+        builder.setNegativeButton("Cancelar", null)
         builder.show()
     }
 
     private fun savePreferences() {
-        val prefs = getSharedPreferences("macro_prefs", MODE_PRIVATE)
-        with(prefs.edit()) {
-            putBoolean("macro_enabled", isMacroEnabled)
-            putInt("action_count", actionCount)
-            putInt("action_size", actionSize)
-            putLong("action_delay", actionDelayMs)
-            // Salvar a ordem como string de índices separados por vírgula
-            putString("action_order", actionOrder.joinToString(","))
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().apply {
+            putBoolean(KEY_ENABLED, isMacroEnabled)
+            putInt(KEY_COUNT, actionCount)
+            putInt(KEY_SIZE, actionSize)
+            putLong(KEY_DELAY, actionDelayMs)
+            putString(KEY_ORDER, actionOrder.joinToString(","))
             apply()
         }
     }
 
     private fun loadPreferences() {
-        val prefs = getSharedPreferences("macro_prefs", MODE_PRIVATE)
-        isMacroEnabled = prefs.getBoolean("macro_enabled", false)
-        actionCount = prefs.getInt("action_count", 5)
-        actionSize = prefs.getInt("action_size", FloatingActionButton.SIZE_MINI)
-        actionDelayMs = prefs.getLong("action_delay", 500L)
-        val orderStr = prefs.getString("action_order", null)
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        isMacroEnabled = prefs.getBoolean(KEY_ENABLED, false)
+        actionCount = prefs.getInt(KEY_COUNT, 5)
+        actionSize = prefs.getInt(KEY_SIZE, FloatingActionButton.SIZE_MINI)
+        actionDelayMs = prefs.getLong(KEY_DELAY, 500L)
+        val orderStr = prefs.getString(KEY_ORDER, null)
         actionOrder = if (orderStr != null) {
             orderStr.split(",").mapNotNull { it.toIntOrNull() }.toMutableList()
         } else {
             (0 until actionCount).toMutableList()
         }
-        // Garantir que a ordem tenha o tamanho correto
         while (actionOrder.size < actionCount) {
             actionOrder.add(actionOrder.size)
         }
