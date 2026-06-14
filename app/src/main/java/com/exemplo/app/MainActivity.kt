@@ -1,45 +1,40 @@
-package com.example.app
+package com.exemplo.app
 
 import android.os.Bundle
+import android.view.ViewGroup
+import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         enableEdgeToEdge()
 
-        setContent {
-            AppTela()
+        val textView = TextView(this).apply {
+            text = "Olá, Android em Kotlin!"
+            textSize = 20f
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
         }
-    }
-}
 
-@Composable
-fun AppTela() {
-    MaterialTheme {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-        ) {
-            Text(text = "Olá, Android em Kotlin!")
+        ViewCompat.setOnApplyWindowInsetsListener(textView) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(
+                bars.left,
+                bars.top,
+                bars.right,
+                bars.bottom
+            )
+            insets
         }
-    }
-}
 
-@Preview(showBackground = true)
-@Composable
-fun PreviewTela() {
-    AppTela()
+        setContentView(textView)
+    }
 }
